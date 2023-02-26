@@ -241,12 +241,13 @@ def k8s_nodes_count(desired_node_count, max_retry=app_config['GLOBAL_MAX_RETRY']
         nodes_online = True
         retry_count += 1
         nodes, excluded_nodes = get_k8s_nodes()
-        logger.info('Current k8s node count is {}'.format(len(nodes)))
-        if len(nodes) < desired_node_count:
+        all_nodes_count = len(nodes) + len(excluded_nodes)
+        logger.info('Current k8s node count is {}'.format(all_nodes_count))
+        if all_nodes_count < desired_node_count:
             nodes_online = False
             logger.info('Waiting for k8s nodes to reach count {}...'.format(desired_node_count))
             time.sleep(wait)
         else:
-            logger.info('Reached desired k8s node count of {}'.format(len(nodes)))
+            logger.info('Reached desired k8s node count of {}'.format(all_nodes_count))
             break
     return nodes_online
