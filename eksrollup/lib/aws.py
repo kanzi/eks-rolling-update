@@ -39,6 +39,37 @@ def get_asgs(cluster_tag, asg_names=app_config['ASG_NAMES']):
         filtered_asgs = specific_asgs
     return filtered_asgs
 
+def get_os_targeted_asgs(cluster_tag, asg_names=app_config['ASG_NAMES'], exclude_node_label_keys=app_config["EXCLUDE_NODE_LABEL_KEYS"]):
+    """
+    Queries AWS and find ASG's matching kubernetes.io/cluster/<cluster_tag> = owned and
+    k8s.io/cluster-autoscaler/node-template/label/kubernetes.io/os'].Value, '(linux|windows)'
+    If asg_names is not empty, returns only asgs that are inside that list, else return all above asgs
+    """
+
+    logger.info('Describing autoscaling groups...')
+    paginator = client.get_paginator('describe_auto_scaling_groups')
+    page_iterator = paginator.paginate(
+        PaginationConfig={'PageSize': 100}
+    )
+
+    # filter asgs based on eks cluster name and instance OS
+    windows_label_keys = ['windows-version', 'node.kubernetes.io/windows-build']
+    if not all(key in windows_label_keys for key in exclude_node_label_keys):
+        os_label = 'windows'
+    else:
+        os_label = 'linux'
+    asg_query = "AutoScalingGroups[] | [?contains(Tags[?Key=='kubernetes.io/cluster/{}'].Value, 'owned') " \
+                "&& contains(Tags[?Key=='k8s.io/cluster-autoscaler/node-template/label/kubernetes.io/os'].Value, '{}')]".format(cluster_tag, os_label)
+    filtered_asgs = page_iterator.search(asg_query)
+
+    if asg_names:
+        # select only asgs provided in asg_names
+        specific_asgs = []
+        for asg in filtered_asgs:
+            if asg['AutoScalingGroupName'] in asg_names:
+                specific_asgs.append(asg)
+        filtered_asgs = specific_asgs
+    return filtered_asgs
 
 def get_launch_template(lt_name):
     """
@@ -432,6 +463,33 @@ def count_all_cluster_instances(cluster_name, predictive=False, exclude_node_lab
     asgs = get_all_asgs(cluster_name)
     for asg in asgs:
         instances = asg['Instances']
+        if predictive:
+            count += asg['DesiredCapacity']
+        else:
+            # Use the get_node_by_instance_id() function as it only returns the node if it is not excluded by K8s labels
+            for instance in instances:
+                instance_id = instance['InstanceId']
+                try:
+                    get_node_by_instance_id(k8s_nodes, instance_id)
+                    count += 1
+                except Exception:
+                    logger.info("Skipping instance {}".format(instance_id))
+    logger.info("{} asg instance count in cluster is: {}. K8s node count should match this number".format("*** Predicted" if predictive else "Current", count))
+    return count
+
+
+def count_os_targeted_cluster_instances(cluster_name, predictive=False, exclude_node_label_keys=app_config["EXCLUDE_NODE_LABEL_KEYS"]):
+    """
+    Returns the total number of ec2 instances in a k8s cluster
+    """
+
+    # Get the K8s nodes on the cluster, while excluding nodes with certain label keys
+    k8s_nodes, _ = get_k8s_nodes(exclude_node_label_keys)
+    count = 0
+    asgs = get_os_targeted_asgs(cluster_name, [], exclude_node_label_keys)
+    for asg in asgs:
+        instances = asg['Instances']
+        print(instances)
         if predictive:
             count += asg['DesiredCapacity']
         else:

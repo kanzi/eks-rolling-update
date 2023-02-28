@@ -5,7 +5,7 @@ import shutil
 from .config import app_config
 from .lib.logger import logger
 from .lib.aws import is_asg_scaled, is_asg_healthy, instance_terminated, get_asg_tag, modify_aws_autoscaling, \
-    count_all_cluster_instances, save_asg_tags, get_asgs, scale_asg, plan_asgs, terminate_instance_in_asg, delete_asg_tags, plan_asgs_older_nodes
+    count_all_cluster_instances, save_asg_tags, get_asgs, get_os_targeted_asgs, scale_asg, plan_asgs, terminate_instance_in_asg, delete_asg_tags, plan_asgs_older_nodes
 from .lib.k8s import k8s_nodes_count, k8s_nodes_ready, get_k8s_nodes, modify_k8s_autoscaler, get_node_by_instance_id, \
     drain_node, delete_node, cordon_node, taint_node
 from .lib.exceptions import RollingUpdateException
@@ -274,7 +274,7 @@ def main(args=None):
     if not kctl:
         logger.info('kubectl is required to be installed before proceeding')
         quit(1)
-    filtered_asgs = get_asgs(args.cluster_name)
+    filtered_asgs = get_os_targeted_asgs(args.cluster_name)
     run_mode = app_config['RUN_MODE']
     # perform a dry run on mode 4 for older nodes
     if (args.plan or app_config['DRY_RUN']) and (run_mode == 4):
